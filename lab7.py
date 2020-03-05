@@ -45,7 +45,42 @@ def top(instr):
 	rd <<= instr[11:16]
 	shamt <<= instr[6:11] # shamt -> ALU
 	funct <<= instr[0:6] # funct -> ALU
-	imm <<= instr[0:16]
+	imm <<= shift_right_arithmetic(instr[0:16], 16) # sign extend immediate
+
+	# pass op and func to control unit
+	alu_op = pyrtl.WireVector(bitwidth=3, name='alu_op')
+	control_signals = pyrtl.WireVector(bitwidth=9, name='control_signals')
+	with pyrtl.conditional_assignment:
+		with op == 0:
+			with funct == 0x20: # add 
+				control_signals |= 0x140
+				alu_op |= 0 
+			with funct == 0x24: # and
+				control_signals |= 0x141
+				alu_op |= 1
+			with funct == 0x2a: # slt
+				control_signals |= 0x144
+				alu_op |= 4
+		with op == 0x8: # addi
+			control_signals |= 0x160
+			alu_op |= 0
+		with op == 0xf: # load upper immediate
+			control_signals |= 0x162
+			alu_op |= 2
+		with op == 0xd: # ori 
+			control_signals |= 0x163
+			alu_op |= 2
+		with op == 0x23: # this one's probably load word
+			control_signals |= 0x168
+			alu_op |= 0
+		with op == 0x2b: # uhhhh sw
+			control_signals |= 0x30
+			alu_op |= 0
+		with op == 0x4: # beq
+			control_signals |= 0x80
+			alu_op |= 4
+		
+		
 
 	w_data = WireVector(bitwidth = 16, name = 'w_data')
 
