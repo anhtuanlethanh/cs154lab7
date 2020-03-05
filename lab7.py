@@ -1,8 +1,17 @@
 import pyrtl
 from pyrtl import *
 
-# basic less than function. Taken from corecircuits.py
-
+def ALU(data0, data1, alu_op):
+	with conditional_assignment:
+		with alu_op == 0:
+			return signed_add(data0, data1)
+		with alu_op == 1:
+			return data0 & data1
+		with alu_op == 2:
+			return data0 | data1
+		with alu_op == 4:
+			data1 = ~data1 + 1
+			return signed_add(data0, data1)
 
 rf = MemBlock(bitwidth=16, addrwidth=5, name='rf')
 # assume the instructions are already given. Just decode them
@@ -20,16 +29,6 @@ def top(instr):
 	data0 = WireVector(bitwidth = 16, name = 'data0')
 	data1 = WireVector(bitwidth = 16, name = 'data1')
 
-
-	# write enable bit, set to 1 as default (write is enabled)
-	# we pass this bit whenever we want to write to the memory block
-	#we_bit = WireVector(1, 'we_bit')
-	# the write enable tuple
-	# when we want to pass an input to write into the memory blocl
-	# we pass in this tuple with the data and the write enable bit
-	#WE = rf.EnabledWrite
-
-
 	# decode the instruction:
 	op = WireVector(bitwidth = 6, name = 'op')
 	rs = WireVector(bitwidth = 5, name = 'rs')
@@ -38,14 +37,22 @@ def top(instr):
 	shamt = WireVector(bitwidth = 5, name = 'shamt')
 	funct = WireVector(bitwidth=6, name = 'funct')
 	imm = WireVector(bitwidth=16, name='imm')
-	
+
+	reg_dst = WireVector(bitwidth=1, name='reg_dst')
+	branch = WireVector(bitwidth=1, name='branch')
+	reg_write = WireVector(bitwidth=1, name='reg_write')
+	alu_src = WireVector(bitwidth=1, name='alu_src')
+	mem_write = WireVector(bitwidth=1, name='mem_write')
+	mem_to_reg = WireVector(bitwidth=1, name='mem_to_reg')
+
 	op <<= instr[26:32] 
 	rs <<= instr[21:26]
 	rt <<= instr[16:21]
 	rd <<= instr[11:16]
 	shamt <<= instr[6:11] # shamt -> ALU
 	funct <<= instr[0:6] # funct -> ALU
-	imm <<= shift_right_arithmetic(instr[0:16], 16) # sign extend immediate
+	imm.sign_extended(32)
+	#imm <<= shift_right_arithmetic(instr[0:16], 16) # sign extend immediate
 
 	# pass op and func to control unit
 	alu_op = pyrtl.WireVector(bitwidth=3, name='alu_op')
@@ -54,34 +61,39 @@ def top(instr):
 		with op == 0:
 			with funct == 0x20: # add 
 				control_signals |= 0x140
-				alu_op |= 0 
+				#alu_op |= 0 
 			with funct == 0x24: # and
 				control_signals |= 0x141
-				alu_op |= 1
+				#alu_op |= 1
 			with funct == 0x2a: # slt
 				control_signals |= 0x144
-				alu_op |= 4
+				#alu_op |= 4
 		with op == 0x8: # addi
 			control_signals |= 0x160
-			alu_op |= 0
+			#alu_op |= 0
 		with op == 0xf: # load upper immediate
 			control_signals |= 0x162
-			alu_op |= 2
+			#alu_op |= 2
 		with op == 0xd: # ori 
 			control_signals |= 0x163
-			alu_op |= 2
+			#alu_op |= 2
 		with op == 0x23: # this one's probably load word
 			control_signals |= 0x168
-			alu_op |= 0
+			#alu_op |= 0
 		with op == 0x2b: # uhhhh sw
 			control_signals |= 0x30
-			alu_op |= 0
+			#alu_op |= 0
 		with op == 0x4: # beq
 			control_signals |= 0x80
-			alu_op |= 4
-		
-		
+			#alu_op |= 4
 
+	reg_dst <<= control_signals[-1]
+	branch <<= control_signals[-2]
+	reg_write <<= control_signals[-3]
+	alu_src <<= control_signals[-4]
+	mem_write <<= control_signals[-5]
+	alu_op <<= control_signals[0:3]
+		
 	w_data = WireVector(bitwidth = 16, name = 'w_data')
 
 	data0 <<= rf[rs]
