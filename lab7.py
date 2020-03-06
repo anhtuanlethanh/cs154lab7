@@ -13,7 +13,9 @@ def ALU(data0, data1, alu_op):
 			data1 = ~data1 + 1
 			return signed_add(data0, data1)
 
-rf = MemBlock(bitwidth=16, addrwidth=5, name='rf')
+rf = MemBlock(bitwidth=16, addrwidth=5, name='rf', asynchronous=True)
+d_mem = MemBlock(bitwidth=16, addrwidth=5, name='d_mem', asynchronous=True)
+i_mem = MemBlock(bitwidth=16, addrwidth=5, name='i_mem')
 # assume the instructions are already given. Just decode them
 # instruction is fed through a 32 bit input wire named instr
 # for testing, implement your own PC and romblock or something idk
@@ -51,7 +53,9 @@ def top(instr):
 	rd <<= instr[11:16]
 	shamt <<= instr[6:11] # shamt -> ALU
 	funct <<= instr[0:6] # funct -> ALU
-	imm.sign_extended(32)
+	imm <<= instr[0:16] # sign extend later
+
+
 	#imm <<= shift_right_arithmetic(instr[0:16], 16) # sign extend immediate
 
 	# pass op and func to control unit
@@ -61,31 +65,40 @@ def top(instr):
 		with op == 0:
 			with funct == 0x20: # add 
 				control_signals |= 0x140
+				imm.sign_extended(32)
 				#alu_op |= 0 
 			with funct == 0x24: # and
 				control_signals |= 0x141
+				imm.sign_extended(32)
 				#alu_op |= 1
 			with funct == 0x2a: # slt
 				control_signals |= 0x144
+				imm.sign_extended(32)
 				#alu_op |= 4
 		with op == 0x8: # addi
 			control_signals |= 0x160
+			imm.sign_extended(32)
 			#alu_op |= 0
 		with op == 0xf: # load upper immediate
 			control_signals |= 0x162
+			imm.sign_extended(32)
 			#alu_op |= 2
 		with op == 0xd: # ori 
 			control_signals |= 0x163
+			imm.zero_extended(32)
 			#alu_op |= 2
 		with op == 0x23: # this one's probably load word
 			control_signals |= 0x168
 			#alu_op |= 0
+			imm.sign_extended(32)
 		with op == 0x2b: # uhhhh sw
 			control_signals |= 0x30
 			#alu_op |= 0
+			imm.sign_extended(32)
 		with op == 0x4: # beq
 			control_signals |= 0x80
 			#alu_op |= 4
+			imm.sign_extended(32)
 
 	reg_dst <<= control_signals[-1]
 	branch <<= control_signals[-2]
@@ -93,11 +106,19 @@ def top(instr):
 	alu_src <<= control_signals[-4]
 	mem_write <<= control_signals[-5]
 	alu_op <<= control_signals[0:3]
+	# sign extend or zero extend depending on instruction
+
 		
 	w_data = WireVector(bitwidth = 16, name = 'w_data')
 
 	data0 <<= rf[rs]
 	data1 <<= rf[rt]
+
+	with conditional_assignment:
+		with alu_src == 0x0:
+			w_data <<= ALU(data0, data1, alu_op)
+		with alu_src == 0x1:
+			w_data <<= ALU(data0, imm, alu_op)
 
 	w_data <<= ALU(data0, data1, alu_op)
 	rf[rd] <<= w_data
