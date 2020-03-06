@@ -99,6 +99,16 @@ def top(instr):
 	data0 <<= rf[rs]
 	data1 <<= rf[rt]
 
+	w_data <<= ALU(data0, data1, alu_op)
+	rf[rd] <<= w_data
+
+	return w_data
+
+	
+instr = Input(bitwidth = 32, name = "instr")
+alu_out = WireVector(bitwidth = 16, name = 'alu_out')
+alu_out <<= top(instr)
+"""
 	with conditional_assignment:
 		with funct == 0x24:
 			w_data |=  data0 & data1
@@ -119,12 +129,4 @@ def top(instr):
 		with funct == 0x22:
 			data1 = ~data1 + 1 # twos complement on data1
 			w_data |= signed_add(data0, data1) # add data0 + (-data1)
-	
-	rf[rd] <<= w_data
-
-	return w_data
-
-instr = Input(bitwidth = 32, name = "instr")
-alu_out = WireVector(bitwidth = 16, name = 'alu_out')
-alu_out <<= top(instr)
-
+	"""
