@@ -2,7 +2,7 @@ import pyrtl
 from pyrtl import *
 
 PC = Register(bitwidth=32, name='PC')
-rf = MemBlock(bitwidth=32, addrwidth=5, name='rf', max_read_ports=None, asynchronous=True)
+rf = MemBlock(bitwidth=32, addrwidth=5, name='rf', max_read_ports=3, asynchronous=True)
 d_mem = MemBlock(bitwidth=32, addrwidth=32, name='d_mem', asynchronous=True)
 i_mem = MemBlock(bitwidth=32, addrwidth=32, name='i_mem')
 instr = WireVector(bitwidth=32, name='instr')
@@ -93,12 +93,12 @@ alu_op <<= control_signals[0:3]
    
 alu_result = WireVector(bitwidth = 32, name = 'alu_result')
 
-data0 <<= rf[rs]
+data0 <<= rf[rs] # 1st index
 
 #Mux for ALU Source
 with pyrtl.conditional_assignment:
    with alu_src == 0:
-      data1 |= rf[rt]
+      data1 |= rf[rt] # 2nd index
    with alu_src == 1:
       data1 |= extended_imm
 
@@ -153,7 +153,7 @@ with pyrtl.conditional_assignment:
    with mem_write == 0:
       we_dmem |= 0
 
-d_mem[alu_result] <<= MemBlock.EnabledWrite(rf[rt], we_dmem)
+d_mem[alu_result] <<= MemBlock.EnabledWrite(rf[rt], we_dmem) # 3rd and last read index
 
 probe(write_reg_temp, 'Im writing to')
 rf[write_reg_temp] <<= probe(bits_temp, 'Im writing')
