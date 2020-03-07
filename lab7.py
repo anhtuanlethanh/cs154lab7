@@ -1,6 +1,7 @@
 import pyrtl
 from pyrtl import *
 
+#This function is sus lmao
 def ALU(data0, data1, alu_op):
 	with conditional_assignment:
 		with alu_op == 0:
@@ -23,7 +24,7 @@ rf = MemBlock(bitwidth=16, addrwidth=5, name='rf')
 def top(instr):
 	# Initialize the registers?
 	#w_data = WireVector(bitwidth = 16, name = 'w_data')
-
+	PC = pyrtl.wire.Register(bitwidth=32, name='PC')
 	# Define some additional wires
 	# data0/1 are write ports for the memory block, data0 <=> rs, data1 <=> rt
 	data0 = WireVector(bitwidth = 16, name = 'data0')
@@ -37,7 +38,9 @@ def top(instr):
 	shamt = WireVector(bitwidth = 5, name = 'shamt')
 	funct = WireVector(bitwidth=6, name = 'funct')
 	imm = WireVector(bitwidth=16, name='imm')
+	branch_addr = WireVector(bitwidth=32, name='branch_addr')
 
+	zero = WireVector(bitwidth=1, name='zero')
 	reg_dst = WireVector(bitwidth=1, name='reg_dst')
 	branch = WireVector(bitwidth=1, name='branch')
 	reg_write = WireVector(bitwidth=1, name='reg_write')
@@ -51,6 +54,7 @@ def top(instr):
 	rd <<= instr[11:16]
 	shamt <<= instr[6:11] # shamt -> ALU
 	funct <<= instr[0:6] # funct -> ALU
+	imm <<= instruc[0:15]
 	imm.sign_extended(32)
 	#imm <<= shift_right_arithmetic(instr[0:16], 16) # sign extend immediate
 
@@ -97,13 +101,46 @@ def top(instr):
 	w_data = WireVector(bitwidth = 16, name = 'w_data')
 
 	data0 <<= rf[rs]
-	data1 <<= rf[rt]
 
-	w_data <<= ALU(data0, data1, alu_op)
-	rf[rd] <<= w_data
+	#Mux for ALU Source
+	with pyrtl.conditional_assignment:
+		with alu_src == 0:
+			data1 |= rf[rt]
+		with alu_src == 1:
+			data1 |= imm
+	
+	#Mux for ALU OP
+	with conditional_assignment:
+		with alu_op == 0:
+			w_data |= signed_add(data0, data1)
+			zero = 0
+		with alu_op == 1:
+			w_data |= data0 & data1
+			zero = 0
+		with alu_op == 2:
+			w_data |= data0 | data1
+			zero = 0
+		with alu_op == 4:
+			w_data |= signed_add(data0, ~data1 + 1)
+			with w_data == 0:
+				zero = 1
+	#Mux for Register Destination and Register WRite
+	with pyrtl.conditional_assignment:
+		with reg_write == 1:
+			with reg_dst == 0:
+				rf[rt] |= w_data
+			with alu_src == 1:
+				rf[rd] |= w_data
 
+	#Branching Instr
+	branch_addr <<= shift_left_logical(imm, 2)
+	PC.next <<= signed_add(PC, 0x0004)
+
+	with pyrtl.conditional_assignment: 
+		with (branch & zero) == 1:
+			PC.next <<= signed_add(PC.next[28:32], branch_addr)
+			
 	return w_data
-
 	
 instr = Input(bitwidth = 32, name = "instr")
 alu_out = WireVector(bitwidth = 16, name = 'alu_out')
