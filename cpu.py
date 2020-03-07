@@ -1,22 +1,8 @@
 import pyrtl
 from pyrtl import *
 
-
-#This function is sus lmao - ok, I know that this doesn't work now
-# def ALU(data0, data1, alu_op):
-# 	with conditional_assignment:
-# 		with alu_op == 0:
-# 			return signed_add(data0, data1)
-# 		with alu_op == 1:
-# 			return data0 & data1
-# 		with alu_op == 2:
-# 			return data0 | data1
-# 		with alu_op == 4:
-# 			data1 = ~data1 + 1
-# 			return signed_add(data0, data1)
-
 PC = Register(bitwidth=32, name='PC')
-rf = MemBlock(bitwidth=32, addrwidth=5, name='rf', asynchronous=True)
+rf = MemBlock(bitwidth=32, addrwidth=5, name='rf', max_read_ports=None, asynchronous=True)
 d_mem = MemBlock(bitwidth=32, addrwidth=32, name='d_mem', asynchronous=True)
 i_mem = MemBlock(bitwidth=32, addrwidth=32, name='i_mem')
 instr = WireVector(bitwidth=32, name='instr')
@@ -32,7 +18,7 @@ instr = WireVector(bitwidth=32, name='instr')
 # data0/1 are write ports for the memory block, data0 <=> rs, data1 <=> rt
 data0 = WireVector(bitwidth = 32, name = 'data0')
 data1 = WireVector(bitwidth = 32, name = 'data1')
-data2 = WireVector(bitwidth = 32, name = 'data2')
+#data2 = WireVector(bitwidth = 32, name = 'data2')
 
 instr <<= i_mem[PC]
 
@@ -43,15 +29,15 @@ rt = WireVector(bitwidth = 5, name = 'rt')
 rd = WireVector(bitwidth = 5, name = 'rd')
 funct = WireVector(bitwidth=6, name = 'funct')
 imm = WireVector(bitwidth=16, name='imm')
-sign_extended_imm = WireVector(bitwidth=32, name='sign_extended_imm')
+extended_imm = WireVector(bitwidth=32, name='extended_imm')
 branch_addr = WireVector(bitwidth=32, name='branch_addr')
 
 zero = WireVector(bitwidth=1, name='zero')
-we = Input(1, 'we')
+we_dmem = WireVector(1, 'we_dmem')
 
 reg_dst = WireVector(bitwidth=1, name='reg_dst')
 branch = WireVector(bitwidth=1, name='branch')
-reg_write = WireVector(bitwidth=1, name='reg_write')
+reg_write = WireVector(bitwidth=1, name='reg_write') # use this as the write enable bit for rf
 mem_write = WireVector(bitwidth=1, name='mem_write')
 mem_to_reg = WireVector(bitwidth=1, name='mem_to_reg')
 alu_src = WireVector(bitwidth=1, name='alu_src')
@@ -62,7 +48,6 @@ rt <<= instr[16:21]
 rd <<= instr[11:16]
 funct <<= instr[0:6] # funct -> ALU
 imm <<= instr[0:16]
-sign_extended_imm <<= imm.sign_extended(32)
 
 # pass op and func to control unit
 alu_op = pyrtl.WireVector(bitwidth=3, name='alu_op')
@@ -71,22 +56,32 @@ with pyrtl.conditional_assignment:
    with op == 0:
       with funct == 0x20: # add 
          control_signals |= 0x140
+         extended_imm |= imm.sign_extended(32)
       with funct == 0x24: # and
          control_signals |= 0x141
+         extended_imm |= imm.sign_extended(32)
       with funct == 0x2a: # slt
          control_signals |= 0x144
+         extended_imm |= imm.sign_extended(32)
    with op == 0x8: # addi
       control_signals |= 0x60
+      extended_imm |= imm.sign_extended(32)
    with op == 0xf: # load upper immediate
       control_signals |= 0x62
-   with op == 0xd: # ori 
-      control_signals |= 0x62
+      extended_imm |= imm.sign_extended(32)
    with op == 0x23: # this one's probably load word
       control_signals |= 0x68
+      extended_imm |= imm.sign_extended(32)
    with op == 0x2b: # uhhhh sw
       control_signals |= 0x30
+      extended_imm |= imm.sign_extended(32)
    with op == 0x4: # beq
       control_signals |= 0x84
+      extended_imm |= imm.sign_extended(32)
+   with op == 0xd: # ori 
+      control_signals |= 0x62
+      extended_imm |= imm.zero_extended(32)
+
 
 reg_dst <<= control_signals[-1]
 branch <<= control_signals[-2]
@@ -105,7 +100,7 @@ with pyrtl.conditional_assignment:
    with alu_src == 0:
       data1 |= rf[rt]
    with alu_src == 1:
-      data1 |= sign_extended_imm
+      data1 |= extended_imm
 
 #Mux for ALU OP
 with conditional_assignment:
@@ -126,7 +121,7 @@ with conditional_assignment:
          zero |= 1
 
 #Branching Instr
-branch_addr <<= shift_left_logical(sign_extended_imm, Const(2))
+branch_addr <<= shift_left_logical(extended_imm, Const(2))
 with pyrtl.conditional_assignment: 
    with (branch & zero) == 1:
       PC.next |= signed_add(PC+1, branch_addr)
@@ -154,37 +149,14 @@ with pyrtl.conditional_assignment:
 
 with pyrtl.conditional_assignment:
    with mem_write == 1:  #sw
-      WE = MemBlock.EnabledWrite
+      we_dmem |= 1
+   with mem_write == 0:
+      we_dmem |= 0
 
-d_mem[alu_result] <<= WE(rf[rt], we)
+d_mem[alu_result] <<= MemBlock.EnabledWrite(rf[rt], we_dmem)
 
 probe(write_reg_temp, 'Im writing to')
 rf[write_reg_temp] <<= probe(bits_temp, 'Im writing')
-
-we <<= we & 0
-
-"""
-	with conditional_assignment:
-		with funct == 0x24:
-			w_data |=  data0 & data1
-		with funct == 0x20:
-			w_data |= signed_add(data0, data1)
-		with funct == 0x25:
-			w_data |=  data0 | data1
-		with funct == 0x00:
-			w_data |=  shift_left_logical(data1, shamt)
-		with funct == 0x03:
-			w_data |=  shift_right_arithmetic(data1, shamt)
-		with funct == 0x02:
-			w_data |=  shift_right_logical(data1, shamt)
-		with funct == 0x2a:
-			w_data |=  signed_lt(data0, data1)
-		with funct == 0x26:
-			w_data |= data0 ^ data1
-		with funct == 0x22:
-			data1 = ~data1 + 1 # twos complement on data1
-			w_data |= signed_add(data0, data1) # add data0 + (-data1)
-	"""
 
 if __name__ == '__main__':
 
